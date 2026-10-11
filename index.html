@@ -55,7 +55,8 @@ async function call(fn, params) {
     body: JSON.stringify(params),
   });
   const j = await res.json();
-  return typeof j.result === 'string' ? JSON.parse(j.result) : j.result;
+  // 兼容两种返回：CloudBase 网关为裸 JSON；SCF 函数信封为 {result:...}
+  return typeof j.result === 'undefined' ? j : (typeof j.result === 'string' ? JSON.parse(j.result) : j.result);
 }
 
 $('btn-query').addEventListener('click', async () => {
