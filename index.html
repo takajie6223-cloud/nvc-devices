@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>英语专业助手 · 设备管理</title>
+<style>
+  body { max-width: 680px; margin: 40px auto; padding: 0 20px 60px;
+         font: 15px/1.8 -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+         color: #1a1a18; background: #faf9f5; }
+  h1 { font-size: 22px; }
+  .meta { color: #8a8a82; font-size: 13px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; margin: 8px 0;
+          border: 1.5px solid #d8d8d0; border-radius: 8px; font: inherit; }
+  button { background: #f2622e; border: none; color: #fff; padding: 10px 22px;
+           border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.ghost { background: #fff; color: #c0392b; border: 1.5px solid #e6b8ad; padding: 4px 12px; font-size: 13px; }
+  .card { background: #fff; border: 1px solid #e8e6de; border-radius: 12px; padding: 14px 18px; margin: 10px 0; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0eee6; }
+  .row:last-child { border-bottom: none; }
+  .dn { font-weight: 600; flex: 1; }
+  .dt { color: #8a8a82; font-size: 12.5px; }
+  .msg { min-height: 22px; color: #c0392b; font-size: 14px; }
+  .ok { color: #1e7a46; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>英语专业助手 Pro · 设备管理</h1>
+<p class="meta">一个授权码最多同时绑定 3 台设备。换电脑/重装浏览器后在这里解绑旧设备，再在新设备上激活。每月最多解绑 2 次。</p>
+
+<div>
+  <input id="code" placeholder="粘贴你的整串授权码（NVC1. 开头）" />
+  <button id="btn-query">查询已绑设备</button>
+  <p class="msg" id="msg"></p>
+</div>
+
+<div id="result" class="hidden">
+  <div class="card" id="dev-list"></div>
+  <p class="meta">看不懂设备名？以最近使用时间为准：留下常用的，解绑不用的那台。解绑后在新设备上重新激活即可（不会消耗激活次数，授权码永久有效）。</p>
+</div>
+
+<script>
+// ===== 部署前填写（与 CloudBase HTTP 访问服务地址一致）=====
+const ACT_REST = 'https://nvc-license-d7giz2nwc373a1dec-1503902185.ap-shanghai.app.tcloudbase.com'; // 云函数 HTTP 访问地址
+// =================================================
+
+const $ = (id) => document.getElementById(id);
+const fmt = (iso) => { try { return new Date(iso).toLocaleString('zh-CN', { hour12: false }); } catch (_) { return iso || '—'; } };
+
+async function call(fn, params) {
+  const res = await fetch(`${ACT_REST.replace(/\/$/, '')}/${fn}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const j = await res.json();
+  return typeof j.result === 'string' ? JSON.parse(j.result) : j.result;
+}
+
+$('btn-query').addEventListener('click', async () => {
+  const code = $('code').value.trim().replace(/\s+/g, '');
+  const msg = $('msg');
+  msg.textContent = '';
+  if (!code.startsWith('NVC1.')) { msg.textContent = '请完整粘贴 NVC1. 开头的授权码'; return; }
+  msg.textContent = '查询中…';
+  try {
+    const r = await call('status', { code });
+    if (!r.ok) {
+      msg.textContent = { invalid: '授权码无效，请核对', unknown: '授权码尚未登记，请联系卖家', revoked: '授权码已被停用' }[r.reason] || '查询失败，请稍后重试';
+      return;
+    }
+    msg.textContent = `订单 ${r.order}：已绑定 ${r.devices.length}/${r.max} 台` + (r.revoked ? '（已停用）' : '');
+    msg.classList.add('ok');
+    const list = $('dev-list');
+    list.innerHTML = '';
+    r.devices.forEach((d) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<div class="dn">${escapeHtml(d.deviceName || '未知设备')}<div class="dt">绑定于 ${fmt(d.boundAt)} · 最近使用 ${fmt(d.lastSeenAt)}</div></div>`;
+      const btn = document.createElement('button');
+      btn.className = 'ghost';
+      btn.textContent = '解绑此设备';
+      btn.addEventListener('click', async () => {
+        if (!confirm(`确定解绑「${d.deviceName}」？解绑后该设备上的 Pro 立即失效（需重新激活）。`)) return;
+        btn.disabled = true; btn.textContent = '解绑中…';
+        try {
+          const u = await call('unbind', { code, deviceId: d.deviceId });
+          if (u.ok) { msg.textContent = `已解绑。当前绑定 ${u.bound}/${u.max} 台。`; $('btn-query').click(); }
+          else { msg.textContent = u.msg || { quota: '本月解绑次数已用完（2 次/月）', invalid: '授权码无效' }[u.reason] || '解绑失败，请稍后重试'; btn.disabled = false; btn.textContent = '解绑此设备'; }
+        } catch (_) { msg.textContent = '网络异常，请稍后重试'; btn.disabled = false; btn.textContent = '解绑此设备'; }
+      });
+      row.appendChild(btn);
+      list.appendChild(row);
+    });
+    if (!r.devices.length) list.innerHTML = '<div class="row">还没有绑定任何设备，直接在插件欢迎页激活即可。</div>';
+    $('result').classList.remove('hidden');
+  } catch (_) {
+    msg.textContent = '网络异常，请稍后重试';
+  }
+  setTimeout(() => msg.classList.remove('ok'), 4000);
+});
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>
