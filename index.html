@@ -62,6 +62,7 @@ async function call(fn, params) {
 $('btn-query').addEventListener('click', async () => {
   const code = $('code').value.trim().replace(/\s+/g, '');
   const msg = $('msg');
+  msg.className = 'msg';
   msg.textContent = '';
   if (!code.startsWith('NVC1.')) { msg.textContent = '请完整粘贴 NVC1. 开头的授权码'; return; }
   msg.textContent = '查询中…';
@@ -99,7 +100,6 @@ $('btn-query').addEventListener('click', async () => {
   } catch (_) {
     msg.textContent = '网络异常，请稍后重试';
   }
-  setTimeout(() => msg.classList.remove('ok'), 4000);
 });
 
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
